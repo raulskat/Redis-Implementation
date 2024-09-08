@@ -22,4 +22,5 @@ This repository contains a custom implementation of a Redis-like server, support
 To compile the server, use the following command:
 
 ```bash
-gcc -o redis_server server.c -lpthread
+gcc server.c -o redis_server
+./redis_server.out
