@@ -1,0 +1,4 @@
+redis-server
+*.o
+src/*.o
+
