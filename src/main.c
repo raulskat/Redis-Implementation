@@ -1,6 +1,7 @@
 #include "command.h"
 #include "config.h"
 #include "datastore.h"
+#include "expiry.h"
 #include "rdb.h"
 #include "replication.h"
 #include "server.h"
@@ -26,12 +27,17 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Failed to load RDB file\n");
     }
 
+    if (expiry_start(&store) != 0) {
+        fprintf(stderr, "Warning: failed to start expiration scheduler\n");
+    }
+
     if (replication_start(&cmd_ctx) != 0) {
         fprintf(stderr, "Warning: replication thread failed to start\n");
     }
 
     int server_status = server_run(&cmd_ctx);
 
+    expiry_stop();
     datastore_free(&store);
     return (server_status == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -14,6 +14,7 @@
 |   +-- config.h
 |   +-- connection.h
 |   +-- datastore.h
+|   +-- expiry.h
 |   +-- persistence.h
 |   +-- replication.h
 |   +-- resp.h
@@ -29,11 +30,13 @@
 |   +-- handlers_basic.c
 |   +-- handlers_kv.c
 |   +-- handlers_replication.c
+|   +-- handlers_expiration.c
 |   +-- main.c
 |   +-- persistence.c
 |   +-- replication.c
 |   +-- resp.c
 |   +-- rdb.c
+|   +-- expiry.c
 ```
 
 ## Module Responsibilities
@@ -41,17 +44,18 @@
 - **datastore**: Manage key/value storage, TTL bookkeeping, concurrency control.
 - **resp**: Read/write RESP frames, convert socket buffers into argument vectors.
 - **command**: Central dispatch table that routes parsed commands to specialised handlers.
-- **command handlers**: Implement individual command families (core operations, persistence, replication).
+- **command handlers**: Implement individual command families (core ops, key/value, expiration, persistence, replication).
 - **rdb**: Load the initial dataset from disk and provide helpers for writing RDB snapshots.
 - **server**: Accept clients, spin up handler threads, bridge sockets with the command layer.
 - **connection**: Own the per-connection RESP decode/send loop so transport concerns stay isolated.
 - **replication**: Handle master/slave negotiation, keep sockets to master alive, stream updates.
 - **persistence**: Coordinate synchronous/background saves, manage SAVE/BGSAVE state, and call into the RDB writer.
+- **expiry**: Run the active expiration scheduler that periodically prunes stale keys.
 
 ## Phase Roadmap
 - **Phase 1** - Foundations (complete): Modular code layout, fix parsing bugs, basic RESP command set (PING/ECHO/SET/GET/KEYS/CONFIG/INFO), RDB load, single-threaded correctness with mutex-protected store.
-- **Phase 2** - Persistence polish (current): Implement synchronous/background saves (`SAVE`/`BGSAVE`), expose `FLUSHALL`, and add checksum verification for produced snapshots.
-- **Phase 3** - Expiration fidelity: Active + passive expiration, support `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST` commands.
+- **Phase 2** - Persistence polish (complete): Implement synchronous/background saves (`SAVE`/`BGSAVE`), expose `FLUSHALL`, and add checksum verification for produced snapshots.
+- **Phase 3** - Expiration fidelity (current): Active + passive expiration, support `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`, `PERSIST` commands.
 - **Phase 4** - Replication maturity: Complete partial resync, backlog handling, propagate write commands, support `PSYNC`/`REPLCONF` negotiations.
 - **Phase 5** - Advanced commands & modules: Sorted sets, lists, pub/sub, transactions, scripting stub.
 

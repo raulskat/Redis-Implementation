@@ -311,6 +311,115 @@ void datastore_snapshot_free(redis_snapshot_entry_t *entries, size_t count) {
     free(entries);
 }
 
+
+int datastore_expire_at(redis_store_t *store, const char *key, uint64_t expiry_ms) {
+    if (!store || !key) {
+        return -1;
+    }
+
+    int result = 0;
+    pthread_mutex_lock(&store->lock);
+    int index = find_entry_index(store, key);
+    uint64_t now_ms = current_time_ms();
+
+    if (index >= 0) {
+        if (prune_if_expired(store, (size_t)index, now_ms)) {
+            result = 0;
+        } else {
+            redis_entry_t *entry = &store->entries[index];
+            if (expiry_ms <= now_ms) {
+                delete_index(store, (size_t)index);
+            } else {
+                entry->expiry_ms = expiry_ms;
+            }
+            result = 1;
+        }
+    }
+    pthread_mutex_unlock(&store->lock);
+    return result;
+}
+
+int datastore_expire_in(redis_store_t *store, const char *key, uint64_t ttl_ms) {
+    if (!store || !key) {
+        return -1;
+    }
+    uint64_t now_ms = current_time_ms();
+    if (ttl_ms > UINT64_MAX - now_ms) {
+        ttl_ms = UINT64_MAX - now_ms;
+    }
+    return datastore_expire_at(store, key, now_ms + ttl_ms);
+}
+
+int datastore_persist_key(redis_store_t *store, const char *key) {
+    if (!store || !key) {
+        return -1;
+    }
+
+    int result = 0;
+    pthread_mutex_lock(&store->lock);
+    int index = find_entry_index(store, key);
+    uint64_t now_ms = current_time_ms();
+    if (index >= 0) {
+        if (prune_if_expired(store, (size_t)index, now_ms)) {
+            result = 0;
+        } else {
+            store->entries[index].expiry_ms = 0;
+            result = 1;
+        }
+    }
+    pthread_mutex_unlock(&store->lock);
+    return result;
+}
+
+long long datastore_ttl_ms(redis_store_t *store, const char *key) {
+    if (!store || !key) {
+        return -2;
+    }
+
+    long long result = -2;
+    pthread_mutex_lock(&store->lock);
+    int index = find_entry_index(store, key);
+    uint64_t now_ms = current_time_ms();
+    if (index >= 0) {
+        if (prune_if_expired(store, (size_t)index, now_ms)) {
+            result = -2;
+        } else {
+            redis_entry_t *entry = &store->entries[index];
+            if (entry->expiry_ms == 0) {
+                result = -1;
+            } else if (entry->expiry_ms <= now_ms) {
+                delete_index(store, (size_t)index);
+                result = -2;
+            } else {
+                result = (long long)(entry->expiry_ms - now_ms);
+            }
+        }
+    }
+    pthread_mutex_unlock(&store->lock);
+    return result;
+}
+
+size_t datastore_prune_expired(redis_store_t *store, size_t limit) {
+    if (!store) {
+        return 0;
+    }
+    size_t removed = 0;
+    pthread_mutex_lock(&store->lock);
+    uint64_t now_ms = current_time_ms();
+    for (size_t i = 0; i < store->count;) {
+        if (prune_if_expired(store, i, now_ms)) {
+            ++removed;
+            if (limit > 0 && removed >= limit) {
+                break;
+            }
+            continue;
+        }
+        ++i;
+    }
+    pthread_mutex_unlock(&store->lock);
+    return removed;
+}
+
 void datastore_delete(redis_store_t *store, const char *key) {
     if (!store || !key) {
         return;

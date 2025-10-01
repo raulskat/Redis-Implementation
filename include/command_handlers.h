@@ -12,6 +12,11 @@ int handle_get_command(int fd, const resp_command_t *cmd, command_context_t *ctx
 int handle_keys_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_config_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_info_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
+int handle_expire_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
+int handle_pexpire_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
+int handle_ttl_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
+int handle_pttl_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
+int handle_persist_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_flush_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_save_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_bgsave_command(int fd, const resp_command_t *cmd, command_context_t *ctx);

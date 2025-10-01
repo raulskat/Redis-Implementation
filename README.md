@@ -7,6 +7,7 @@ This project implements a lightweight Redis-compatible server written in C. The 
 - Thread-safe in-memory key/value store with optional TTL (millisecond resolution).
 - RDB bootstrap loader that understands string-encoded keys/values and absolute expirations.
 - Snapshot persistence via synchronous SAVE and background BGSAVE, with atomic RDB writes and FLUSHALL/FLUSHDB clearing the in-memory dataset.
+- Expiration fidelity: EXPIRE/PEXPIRE/TTL/PTTL/PERSIST commands with an active pruning scheduler.
 - Multithreaded TCP server accepting concurrent clients.
 - Replica handshake stub that connects to the configured master and negotiates basic replication state.
 
@@ -51,3 +52,5 @@ Phase 4: replication backlog, streaming updates, partial resync, write propagati
 Phase 5: broader command surface (lists, sets, pub/sub, transactions) and memory optimisations.
 
 See docs/architecture.md for detailed module responsibilities and the multi-phase execution plan.
+
+For a full commands reference and usage examples, read docs/COMMANDS.md.

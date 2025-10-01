@@ -33,6 +33,11 @@ int datastore_keys(redis_store_t *store, char ***keys_out, size_t *count_out);
 void datastore_flush(redis_store_t *store);
 int datastore_snapshot(redis_store_t *store, redis_snapshot_entry_t **entries_out, size_t *count_out);
 void datastore_snapshot_free(redis_snapshot_entry_t *entries, size_t count);
+int datastore_expire_in(redis_store_t *store, const char *key, uint64_t ttl_ms);
+int datastore_expire_at(redis_store_t *store, const char *key, uint64_t expiry_ms);
+int datastore_persist_key(redis_store_t *store, const char *key);
+long long datastore_ttl_ms(redis_store_t *store, const char *key);
+size_t datastore_prune_expired(redis_store_t *store, size_t limit);
 void datastore_delete(redis_store_t *store, const char *key);
 uint64_t datastore_current_time_ms(void);
 
