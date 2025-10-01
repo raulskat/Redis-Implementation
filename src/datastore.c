@@ -86,7 +86,7 @@ void datastore_init(redis_store_t *store) {
     pthread_mutex_init(&store->lock, NULL);
 }
 
-void datastore_free(redis_store_t *store) {
+void datastore_flush(redis_store_t *store) {
     if (!store) {
         return;
     }
@@ -99,6 +99,13 @@ void datastore_free(redis_store_t *store) {
     store->count = 0;
     store->capacity = 0;
     pthread_mutex_unlock(&store->lock);
+}
+
+void datastore_free(redis_store_t *store) {
+    if (!store) {
+        return;
+    }
+    datastore_flush(store);
     pthread_mutex_destroy(&store->lock);
 }
 
@@ -232,6 +239,76 @@ int datastore_keys(redis_store_t *store, char ***keys_out, size_t *count_out) {
     *count_out = valid_count;
     pthread_mutex_unlock(&store->lock);
     return 0;
+}
+
+
+int datastore_snapshot(redis_store_t *store, redis_snapshot_entry_t **entries_out, size_t *count_out) {
+    if (!store || !entries_out || !count_out) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&store->lock);
+    uint64_t now_ms = current_time_ms();
+
+    size_t valid_count = 0;
+    for (size_t i = 0; i < store->count;) {
+        if (prune_if_expired(store, i, now_ms)) {
+            continue;
+        }
+        ++valid_count;
+        ++i;
+    }
+
+    if (valid_count == 0) {
+        *entries_out = NULL;
+        *count_out = 0;
+        pthread_mutex_unlock(&store->lock);
+        return 0;
+    }
+
+    redis_snapshot_entry_t *entries = calloc(valid_count, sizeof(redis_snapshot_entry_t));
+    if (!entries) {
+        pthread_mutex_unlock(&store->lock);
+        return -1;
+    }
+
+    size_t out_index = 0;
+    for (size_t i = 0; i < store->count && out_index < valid_count; ++i) {
+        redis_entry_t *entry = &store->entries[i];
+        if (!entry->key) {
+            continue;
+        }
+        entries[out_index].key = strdup(entry->key);
+        entries[out_index].value = strdup(entry->value);
+        entries[out_index].expiry_ms = entry->expiry_ms;
+        if (!entries[out_index].key || !entries[out_index].value) {
+            for (size_t j = 0; j <= out_index; ++j) {
+                free(entries[j].key);
+                free(entries[j].value);
+            }
+            free(entries);
+            pthread_mutex_unlock(&store->lock);
+            return -1;
+        }
+        ++out_index;
+    }
+
+    pthread_mutex_unlock(&store->lock);
+
+    *entries_out = entries;
+    *count_out = out_index;
+    return 0;
+}
+
+void datastore_snapshot_free(redis_snapshot_entry_t *entries, size_t count) {
+    if (!entries) {
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        free(entries[i].key);
+        free(entries[i].value);
+    }
+    free(entries);
 }
 
 void datastore_delete(redis_store_t *store, const char *key) {

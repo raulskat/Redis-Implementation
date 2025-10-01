@@ -1,5 +1,7 @@
 #include "command.h"
+#include "persistence.h"
 
+#include <errno.h>
 #include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -163,6 +165,33 @@ static int handle_info(int fd, const resp_command_t *cmd, command_context_t *ctx
     return resp_send_bulk_string(fd, buffer);
 }
 
+static int handle_flush(int fd, command_context_t *ctx) {
+    datastore_flush(ctx->store);
+    return resp_send_simple_string(fd, "OK");
+}
+
+static int handle_save(int fd, command_context_t *ctx) {
+    int rc = persistence_save_sync(ctx->store, ctx->config);
+    if (rc == 0) {
+        return resp_send_simple_string(fd, "OK");
+    }
+    if (rc == EBUSY) {
+        return resp_send_error(fd, "ERR Background save already in progress");
+    }
+    return resp_send_error(fd, "ERR save failed");
+}
+
+static int handle_bgsave(int fd, command_context_t *ctx) {
+    int rc = persistence_save_async(ctx->store, ctx->config);
+    if (rc == 0) {
+        return resp_send_simple_string(fd, "Background saving started");
+    }
+    if (rc == EBUSY) {
+        return resp_send_error(fd, "ERR Background save already in progress");
+    }
+    return resp_send_error(fd, "ERR background save failed");
+}
+
 static int handle_replconf(int fd) {
     return resp_send_simple_string(fd, "OK");
 }
@@ -208,6 +237,33 @@ void command_handle(int client_fd, const resp_command_t *cmd, command_context_t 
     }
     if (str_icmp(verb, "INFO") == 0) {
         handle_info(client_fd, cmd, ctx);
+        return;
+    }
+    if (str_icmp(verb, "FLUSHALL") == 0 || str_icmp(verb, "FLUSHDB") == 0) {
+        if (cmd->argc != 1) {
+            const char *name = str_icmp(verb, "FLUSHALL") == 0 ? "flushall" : "flushdb";
+            char err[128];
+            snprintf(err, sizeof(err), "ERR wrong number of arguments for '%s' command", name);
+            resp_send_error(client_fd, err);
+        } else {
+            handle_flush(client_fd, ctx);
+        }
+        return;
+    }
+    if (str_icmp(verb, "SAVE") == 0) {
+        if (cmd->argc != 1) {
+            resp_send_error(client_fd, "ERR wrong number of arguments for 'save' command");
+        } else {
+            handle_save(client_fd, ctx);
+        }
+        return;
+    }
+    if (str_icmp(verb, "BGSAVE") == 0) {
+        if (cmd->argc != 1) {
+            resp_send_error(client_fd, "ERR wrong number of arguments for 'bgsave' command");
+        } else {
+            handle_bgsave(client_fd, ctx);
+        }
         return;
     }
     if (str_icmp(verb, "REPLCONF") == 0) {

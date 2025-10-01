@@ -3,9 +3,10 @@
 This project implements a lightweight Redis-compatible server written in C. The legacy single-file prototype has been split into focused modules for networking, command parsing, persistence, replication, and the in-memory datastore. The goal is to iterate towards a feature-complete Redis clone following the phase roadmap captured in docs/architecture.md.
 
 ## Current Capabilities
-- RESP command parsing with support for PING, ECHO, SET, GET, KEYS, CONFIG GET, INFO replication, REPLCONF, and PSYNC.
+- RESP command parsing with support for PING, ECHO, SET, GET, KEYS, CONFIG GET, INFO replication, FLUSHALL/FLUSHDB, SAVE, BGSAVE, REPLCONF, and PSYNC.
 - Thread-safe in-memory key/value store with optional TTL (millisecond resolution).
 - RDB bootstrap loader that understands string-encoded keys/values and absolute expirations.
+- Snapshot persistence via synchronous SAVE and background BGSAVE, with atomic RDB writes and FLUSHALL/FLUSHDB clearing the in-memory dataset.
 - Multithreaded TCP server accepting concurrent clients.
 - Replica handshake stub that connects to the configured master and negotiates basic replication state.
 
@@ -43,8 +44,8 @@ Optional flags:
 `
 
 ## Roadmap (high level)
-Phase 1 (current): modularisation, RESP parser, safer datastore, RDB load fixes, replication handshake stub.
-Phase 2: scheduled/common persistence commands (SAVE, BGSAVE), checksum verification, FLUSHALL.
+Phase 1 (complete): modularisation, RESP parser, safer datastore, RDB load fixes, replication handshake stub.
+Phase 2 (current): synchronous + background persistence commands (SAVE/BGSAVE), RDB writer, FLUSHALL, checksum hardening.
 Phase 3: full expiration machinery and commands (EXPIRE, TTL, passive/active eviction).
 Phase 4: replication backlog, streaming updates, partial resync, write propagation.
 Phase 5: broader command surface (lists, sets, pub/sub, transactions) and memory optimisations.
