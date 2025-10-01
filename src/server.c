@@ -1,4 +1,5 @@
 #include "server.h"
+#include "connection.h"
 
 #include <errno.h>
 #include <arpa/inet.h>
@@ -10,70 +11,18 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define CLIENT_BUFFER_SIZE 8192
-
 typedef struct {
     int fd;
     command_context_t *ctx;
-} client_job_t;
+} connection_job_t;
 
 static void *client_thread(void *arg) {
-    client_job_t *job = (client_job_t *)arg;
+    connection_job_t *job = (connection_job_t *)arg;
     int fd = job->fd;
     command_context_t *ctx = job->ctx;
     free(job);
 
-    char buffer[CLIENT_BUFFER_SIZE];
-    size_t buffered = 0;
-
-    while (1) {
-        if (buffered == sizeof(buffer)) {
-            resp_send_error(fd, "ERR command too large");
-            break;
-        }
-        ssize_t received = recv(fd, buffer + buffered, sizeof(buffer) - buffered, 0);
-        if (received == 0) {
-            break; // client closed connection
-        }
-        if (received < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            perror("recv");
-            break;
-        }
-
-        buffered += (size_t)received;
-        size_t offset = 0;
-
-        while (offset < buffered) {
-            resp_command_t cmd = {0};
-            size_t consumed = 0;
-            int parse_status = resp_parse(buffer + offset, buffered - offset, &cmd, &consumed);
-
-            if (parse_status == RESP_PARSE_ERROR) {
-                resp_send_error(fd, "ERR protocol error");
-                resp_command_free(&cmd);
-                offset = buffered; // drop buffered data
-                break;
-            }
-
-            if (parse_status == RESP_PARSE_INCOMPLETE) {
-                break; // need more data
-            }
-
-            command_handle(fd, &cmd, ctx);
-            resp_command_free(&cmd);
-            offset += consumed;
-        }
-
-        if (offset > 0) {
-            memmove(buffer, buffer + offset, buffered - offset);
-            buffered -= offset;
-        }
-    }
-
-    close(fd);
+    connection_serve(fd, ctx);
     return NULL;
 }
 
@@ -127,7 +76,7 @@ int server_run(command_context_t *ctx) {
             break;
         }
 
-        client_job_t *job = malloc(sizeof(client_job_t));
+        connection_job_t *job = malloc(sizeof(*job));
         if (!job) {
             close(client_fd);
             continue;

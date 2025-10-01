@@ -36,8 +36,8 @@ Optional flags:
 
 ## Repository Layout
 `
-+-- include/          # Public headers for each module
-+-- src/              # Module implementations
++-- include/          # Public headers (command, connection, datastore, persistence, etc.)
++-- src/              # Module implementations (handlers_*.c, connection.c, persistence.c, ...)
 +-- docs/architecture.md
 +-- Makefile
 +-- README.md

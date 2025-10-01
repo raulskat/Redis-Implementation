@@ -9,7 +9,10 @@
 ```
 +-- include/
 |   +-- command.h
+|   +-- command_handlers.h
+|   +-- command_utils.h
 |   +-- config.h
+|   +-- connection.h
 |   +-- datastore.h
 |   +-- persistence.h
 |   +-- replication.h
@@ -18,8 +21,14 @@
 |   +-- server.h
 +-- src/
 |   +-- command.c
+|   +-- command_utils.c
 |   +-- config.c
+|   +-- connection.c
 |   +-- datastore.c
+|   +-- handlers_admin.c
+|   +-- handlers_basic.c
+|   +-- handlers_kv.c
+|   +-- handlers_replication.c
 |   +-- main.c
 |   +-- persistence.c
 |   +-- replication.c
@@ -31,9 +40,11 @@
 - **config**: Parse CLI arguments, hold runtime configuration, expose helpers.
 - **datastore**: Manage key/value storage, TTL bookkeeping, concurrency control.
 - **resp**: Read/write RESP frames, convert socket buffers into argument vectors.
-- **command**: Dispatch parsed commands, call into datastore/persistence/replication layers, format responses.
+- **command**: Central dispatch table that routes parsed commands to specialised handlers.
+- **command handlers**: Implement individual command families (core operations, persistence, replication).
 - **rdb**: Load the initial dataset from disk and provide helpers for writing RDB snapshots.
 - **server**: Accept clients, spin up handler threads, bridge sockets with the command layer.
+- **connection**: Own the per-connection RESP decode/send loop so transport concerns stay isolated.
 - **replication**: Handle master/slave negotiation, keep sockets to master alive, stream updates.
 - **persistence**: Coordinate synchronous/background saves, manage SAVE/BGSAVE state, and call into the RDB writer.
 
