@@ -4,6 +4,7 @@
 #include "resp.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 int handle_ping_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
     (void)ctx;
@@ -19,6 +20,25 @@ int handle_echo_command(int fd, const resp_command_t *cmd, command_context_t *ct
         return resp_send_error(fd, "ERR wrong number of arguments for 'echo' command");
     }
     return resp_send_bulk_string(fd, cmd->argv[1]);
+}
+
+int handle_hello_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
+    (void)ctx;
+    int protocol = 2;
+    if (cmd->argc >= 2) {
+        char *endptr = NULL;
+        long parsed = strtol(cmd->argv[1], &endptr, 10);
+        if (!endptr || *endptr != '\0') {
+            return resp_send_error(fd, "ERR invalid protocol version");
+        }
+        protocol = (int)parsed;
+    }
+    if (protocol != 2 && protocol != 3) {
+        return resp_send_error(fd, "ERR unsupported protocol version");
+    }
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "HELLO %d", protocol);
+    return resp_send_simple_string(fd, buffer);
 }
 
 int handle_info_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {

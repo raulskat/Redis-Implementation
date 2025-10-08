@@ -6,10 +6,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct {
+typedef struct redis_entry {
     char *key;
     char *value;
-    uint64_t expiry_ms; // absolute time in milliseconds (0 means no expiration)
+    uint64_t expiry_ms; // absolute expiration timestamp (0 means persistent)
+    struct redis_entry *next;
 } redis_entry_t;
 
 typedef struct {
@@ -19,9 +20,9 @@ typedef struct {
 } redis_snapshot_entry_t;
 
 typedef struct {
-    redis_entry_t *entries;
-    size_t count;
-    size_t capacity;
+    redis_entry_t **buckets;
+    size_t bucket_count;
+    size_t size;
     pthread_mutex_t lock;
 } redis_store_t;
 

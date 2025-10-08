@@ -34,7 +34,7 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
                            Persistence & Replication  In-Memory Store
 ```
 
-- **Runtime Orchestrator**: Encapsulates configuration and coordinates the bootstrap/shutdown of all subsystems before requests flow.
+- **Runtime Orchestrator**: Encapsulates configuration and coordinates the bootstrap/shutdown of all subsystems before requests flow through a pluggable subsystem registry.
 - **Reactor Layer**: Poll-based event loop managing non-blocking sockets.
 - **Command Pipeline**: RESP parser, validator chain, dispatcher table, event bus.
 - **Execution Engine**: Command handlers keyed by feature families (core,
@@ -58,13 +58,13 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
 
 | Module | Files | Highlights |
 |--------|-------|------------|
-| **Runtime / Main** | `src/runtime.c`, `src/main.c` | Lifecycle orchestration, configuration, subsystem bootstrap/shutdown |
+| **Runtime / Main** | `src/runtime.c`, `src/main.c` | Lifecycle orchestration with subsystem registry, configuration, bootstrap/shutdown |
 | **Config** | `src/config.c` | CLI arg parsing, default paths, replication flags |
 | **Command dispatcher** | `src/command.c`, `include/command_dispatcher.h` | Table-driven handlers, validator chains, event emission |
 | **Handlers** | `src/handlers_*.c` | Families: basic, kv, admin, expiration, replication |
 | **RESP protocol** | `src/resp.c` | Parser and serializer for RESP messages |
 | **Networking** | `src/server.c`, `src/connection.c`, `src/reactor.c` | Reactor loop, connection state machines |
-| **Datastore** | `src/datastore.c`, `include/datastore.h` | Key/value storage, TTL, snapshotting |
+| **Datastore** | `src/datastore.c`, `include/datastore.h` | Hash-table key/value storage with TTL, snapshotting |
 | **Persistence** | `src/persistence.c`, `src/rdb.c` | Snapshot and future AOF hooks |
 | **Replication** | `src/replication.c` | Listener registration, handshake stub |
 | **Expiry** | `src/expiry.c` | Background expiration scheduler |
@@ -76,11 +76,16 @@ Each module is registered via the command context, making it easier to swap comp
 
 ## 4. Development Roadmap
 
+- **Subsystem Registry**: `runtime_register_subsystem` lets core or optional components (expiry, replication, future modules) hook into startup/shutdown sequencing with clear error handling and optional fallbacks. Optional subsystems can fail without crashing the server; the runtime logs warnings and continues boot, while mandatory subsystems bubble errors before clients connect.
+
 **Phase 0 – Foundation Hardening (current)**  
 - [x] Reactor-based I/O layer  
 - [x] Command validation chain  
 - [x] Persistence Strategy pattern (sync/async)  
 - [x] Runtime orchestration layer  
+- [x] Hash-table datastore with automatic resizing  
+- [x] RESP handshake scaffolding (`HELLO 2/3`)  
+- [x] Replication backlog recorder (in-memory queue)  
 - [ ] Production-grade dictionary & allocator  
 - [ ] RESP3 negotiation scaffolding  
 - [ ] Finish replication observer pipeline
@@ -117,6 +122,7 @@ Refer to `docs/redis_parity_design.md` for the in-depth blueprint.
 |---------|------|------------|
 | v0.1 (Baseline) | 2025-09 | Modularized legacy `server.c`; RESP parser; basic commands; RDB load |
 | v0.2 | 2025-10 | Added persistence strategies, replication listener skeleton, reactor networking, command validator chain |
+| v0.3 | 2025-10 | Hash-table datastore, runtime subsystem registry, RESP `HELLO` scaffolding, replication backlog |
 | v0.3 (Planned) | Q1 2026 | Production-grade dict/sds, AOF writer, PSYNC2 partial resync |
 | v1.0 (Target) | TBD | Redis-parity release: cluster, replication, persistence, modules |
 

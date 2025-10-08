@@ -54,6 +54,7 @@ static const command_validator_t info_validators[] = {
 static const command_spec_t builtin_commands[] = {
     COMMAND_DEF("PING", handle_ping_command, 1, 2),
     COMMAND_DEF("ECHO", handle_echo_command, 2, 2),
+    COMMAND_DEF("HELLO", handle_hello_command, 1, -1),
     COMMAND_DEF("SET", handle_set_command, 3, -1),
     COMMAND_DEF("GET", handle_get_command, 2, 2),
     {.name = "CONFIG",

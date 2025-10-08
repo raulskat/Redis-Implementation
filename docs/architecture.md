@@ -49,7 +49,7 @@
 
 ## Module Responsibilities
 - **config**: Parse CLI arguments, hold runtime configuration, expose helpers.
-- **datastore**: Manage key/value storage, TTL bookkeeping, concurrency control.
+- **datastore**: Manage hash-table key/value storage, TTL bookkeeping, concurrency control.
 - **resp**: Read/write RESP frames, convert socket buffers into argument vectors.
 - **command**: Central dispatch table that routes parsed commands to specialised handlers.
 - **command handlers**: Implement individual command families (core ops, key/value, expiration, persistence, replication).
@@ -60,7 +60,7 @@
 - **replication**: Handle master/slave negotiation, keep sockets to master alive, stream updates.
 - **persistence**: Coordinate synchronous/background saves, manage SAVE/BGSAVE state, and call into the RDB writer.
 - **expiry**: Run the active expiration scheduler that periodically prunes stale keys.
-- **runtime**: Central application coordinator that orchestrates configuration, datastore lifecycle, subsystems startup, and graceful shutdown.
+- **runtime**: Central application coordinator with a subsystem registry that orchestrates configuration, datastore lifecycle, optional/mandatory subsystem startup, and graceful shutdown.
 - **command dispatcher/events**: Maintain the command registry, validation chains, and observer hooks for replication/metrics.
 
 ## Phase Roadmap

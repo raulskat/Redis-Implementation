@@ -9,26 +9,158 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#define REPLICATION_BACKLOG_MAX_BYTES (1024 * 1024)
+
+typedef struct replication_backlog_entry {
+    char *payload;
+    size_t length;
+    command_event_type_t type;
+    struct replication_backlog_entry *next;
+} replication_backlog_entry_t;
+
 typedef struct {
     command_context_t *ctx;
 } replication_args_t;
 
+static pthread_mutex_t backlog_lock = PTHREAD_MUTEX_INITIALIZER;
+static replication_backlog_entry_t *backlog_head = NULL;
+static replication_backlog_entry_t *backlog_tail = NULL;
+static size_t backlog_bytes = 0;
+static size_t backlog_count = 0;
+
 static int replication_listener_registered = 0;
+
+static void backlog_append(replication_backlog_entry_t *entry) {
+    if (!entry) {
+        return;
+    }
+    pthread_mutex_lock(&backlog_lock);
+    if (!backlog_tail) {
+        backlog_head = backlog_tail = entry;
+    } else {
+        backlog_tail->next = entry;
+        backlog_tail = entry;
+    }
+    backlog_bytes += entry->length;
+    ++backlog_count;
+
+    while (backlog_bytes > REPLICATION_BACKLOG_MAX_BYTES && backlog_head) {
+        replication_backlog_entry_t *old = backlog_head;
+        backlog_head = old->next;
+        if (!backlog_head) {
+            backlog_tail = NULL;
+        }
+        backlog_bytes -= old->length;
+        if (backlog_count > 0) {
+            --backlog_count;
+        }
+        free(old->payload);
+        free(old);
+    }
+    pthread_mutex_unlock(&backlog_lock);
+}
+
+void replication_backlog_clear(void) {
+    pthread_mutex_lock(&backlog_lock);
+    replication_backlog_entry_t *entry = backlog_head;
+    while (entry) {
+        replication_backlog_entry_t *next = entry->next;
+        free(entry->payload);
+        free(entry);
+        entry = next;
+    }
+    backlog_head = backlog_tail = NULL;
+    backlog_bytes = 0;
+    backlog_count = 0;
+    pthread_mutex_unlock(&backlog_lock);
+}
+
+size_t replication_backlog_command_count(void) {
+    pthread_mutex_lock(&backlog_lock);
+    size_t count = backlog_count;
+    pthread_mutex_unlock(&backlog_lock);
+    return count;
+}
+
+size_t replication_backlog_bytes(void) {
+    pthread_mutex_lock(&backlog_lock);
+    size_t bytes = backlog_bytes;
+    pthread_mutex_unlock(&backlog_lock);
+    return bytes;
+}
+
+static char *serialize_command(const resp_command_t *cmd, size_t *out_len) {
+    if (!cmd || cmd->argc == 0) {
+        return NULL;
+    }
+    size_t total = 0;
+    total += (size_t)snprintf(NULL, 0, "*%zu\r\n", cmd->argc);
+    for (size_t i = 0; i < cmd->argc; ++i) {
+        size_t arg_len = strlen(cmd->argv[i]);
+        total += (size_t)snprintf(NULL, 0, "$%zu\r\n", arg_len);
+        total += arg_len + 2; // argument + CRLF
+    }
+
+    char *buffer = malloc(total + 1);
+    if (!buffer) {
+        return NULL;
+    }
+
+    size_t offset = (size_t)snprintf(buffer, total + 1, "*%zu\r\n", cmd->argc);
+    for (size_t i = 0; i < cmd->argc; ++i) {
+        const char *arg = cmd->argv[i];
+        size_t arg_len = strlen(arg);
+        offset += (size_t)snprintf(buffer + offset, total + 1 - offset, "$%zu\r\n", arg_len);
+        memcpy(buffer + offset, arg, arg_len);
+        offset += arg_len;
+        buffer[offset++] = '\r';
+        buffer[offset++] = '\n';
+    }
+    buffer[offset] = '\0';
+    if (out_len) {
+        *out_len = offset;
+    }
+    return buffer;
+}
+
+static void record_event(const command_event_t *event) {
+    if (!event || !event->command || event->handler_result != 0) {
+        return;
+    }
+    size_t length = 0;
+    char *payload = serialize_command(event->command, &length);
+    if (!payload || length == 0) {
+        free(payload);
+        return;
+    }
+
+    replication_backlog_entry_t *entry = malloc(sizeof(*entry));
+    if (!entry) {
+        free(payload);
+        return;
+    }
+    entry->payload = payload;
+    entry->length = length;
+    entry->type = event->type;
+    entry->next = NULL;
+
+    backlog_append(entry);
+    printf("Replication backlog enqueued %s (%zu bytes, total %zu)\n",
+           event->command_name ? event->command_name : "unknown",
+           length,
+           replication_backlog_command_count());
+}
 
 static int replication_command_listener(const command_event_t *event, void *userdata) {
     (void)userdata;
-    if (!event || !event->command_name) {
+    if (!event) {
         return 0;
     }
-    if (event->handler_result != 0) {
-        return 0;
-    }
-
     switch (event->type) {
     case COMMAND_EVENT_WRITE:
     case COMMAND_EVENT_DELETE:
     case COMMAND_EVENT_EXPIRY:
-        printf("Queued command for replication: %s\n", event->command_name);
+        record_event(event);
         break;
     default:
         break;

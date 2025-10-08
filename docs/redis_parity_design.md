@@ -177,9 +177,13 @@
 ## 6. Implementation Roadmap
 
 ### Phase 0 – Foundation Hardening
-- Replace hand-rolled reactor with backend-agnostic poller (`epoll`/`kqueue`).
-- Complete validator coverage, command manifest metadata, ACL scaffolding.
-- Harden datastore: adopt Redis-like `dict.c`, `sds.c`, memory allocator hooks.
+- [x] Runtime subsystem registry and reactor-driven server loop
+- [x] Command dispatcher + validator metadata scaffolding
+- [x] Hash-table datastore with TTL and snapshot support
+- [x] RESP handshake scaffolding (`HELLO` 2/3) and replication backlog recorder
+- [ ] Backend-agnostic poller abstraction (`epoll`/`kqueue`) with transport adapters
+- [ ] Upgrade string/allocator layer (SDS, jemalloc integration)
+- [ ] Extend validator metadata and ACL scaffolding
 
 ### Phase 1 – Persistence & Replication Parity
 - Introduce AOF writer, rewrite pipeline, append-only configuration.
