@@ -3,8 +3,6 @@
 
 #include "command.h"
 
-typedef int (*command_handler_fn)(int fd, const resp_command_t *cmd, command_context_t *ctx);
-
 int handle_ping_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_echo_command(int fd, const resp_command_t *cmd, command_context_t *ctx);
 int handle_set_command(int fd, const resp_command_t *cmd, command_context_t *ctx);

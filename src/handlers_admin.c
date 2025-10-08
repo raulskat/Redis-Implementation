@@ -44,7 +44,7 @@ int handle_flush_command(int fd, const resp_command_t *cmd, command_context_t *c
 
 int handle_save_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
     (void)cmd;
-    int rc = persistence_save_sync(ctx->store, ctx->config);
+    int rc = persistence_save(ctx->store, ctx->config, PERSISTENCE_MODE_SYNC);
     if (rc == 0) {
         return resp_send_simple_string(fd, "OK");
     }
@@ -56,7 +56,7 @@ int handle_save_command(int fd, const resp_command_t *cmd, command_context_t *ct
 
 int handle_bgsave_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
     (void)cmd;
-    int rc = persistence_save_async(ctx->store, ctx->config);
+    int rc = persistence_save(ctx->store, ctx->config, PERSISTENCE_MODE_ASYNC);
     if (rc == 0) {
         return resp_send_simple_string(fd, "Background saving started");
     }

@@ -3,92 +3,117 @@
 #include "command_utils.h"
 #include "resp.h"
 
-#include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-void command_context_init(command_context_t *ctx, redis_store_t *store, redis_config_t *config) {
+#define COMMAND_DEF(NAME, HANDLER, MIN, MAX) \
+    { .name = NAME, .handler = HANDLER, .validator = NULL, .min_arity = MIN, .max_arity = MAX }
+#define COMMAND_DEF_WITH_VALIDATOR(NAME, HANDLER, MIN, MAX, VALIDATOR) \
+    { .name = NAME, .handler = HANDLER, .validator = VALIDATOR, .min_arity = MIN, .max_arity = MAX }
+
+static int validate_config_command(const resp_command_t *cmd,
+                                   const command_context_t *ctx,
+                                   char *error_buf,
+                                   size_t error_buf_len) {
+    (void)ctx;
+    if (cmd->argc < 2) {
+        return 0;
+    }
+    if (command_str_icmp(cmd->argv[1], "GET") != 0) {
+        snprintf(error_buf, error_buf_len, "ERR unknown subcommand");
+        return -1;
+    }
+    if (cmd->argc < 3) {
+        snprintf(error_buf, error_buf_len, "ERR wrong number of arguments for 'config get'");
+        return -1;
+    }
+    return 0;
+}
+
+static int validate_info_command(const resp_command_t *cmd,
+                                 const command_context_t *ctx,
+                                 char *error_buf,
+                                 size_t error_buf_len) {
+    (void)ctx;
+    if (cmd->argc <= 1) {
+        return 0;
+    }
+    if (command_str_icmp(cmd->argv[1], "replication") != 0) {
+        snprintf(error_buf, error_buf_len, "ERR unsupported INFO section");
+        return -1;
+    }
+    return 0;
+}
+
+static const command_spec_t builtin_commands[] = {
+    COMMAND_DEF("PING", handle_ping_command, 1, 2),
+    COMMAND_DEF("ECHO", handle_echo_command, 2, 2),
+    COMMAND_DEF("SET", handle_set_command, 3, -1),
+    COMMAND_DEF("GET", handle_get_command, 2, 2),
+    COMMAND_DEF_WITH_VALIDATOR("CONFIG", handle_config_command, 3, -1, validate_config_command),
+    COMMAND_DEF("KEYS", handle_keys_command, 1, -1),
+    COMMAND_DEF("EXPIRE", handle_expire_command, 3, 3),
+    COMMAND_DEF("PEXPIRE", handle_pexpire_command, 3, 3),
+    COMMAND_DEF("TTL", handle_ttl_command, 2, 2),
+    COMMAND_DEF("PTTL", handle_pttl_command, 2, 2),
+    COMMAND_DEF("PERSIST", handle_persist_command, 2, 2),
+    COMMAND_DEF_WITH_VALIDATOR("INFO", handle_info_command, 1, 2, validate_info_command),
+    COMMAND_DEF("FLUSHALL", handle_flush_command, 1, 1),
+    COMMAND_DEF("FLUSHDB", handle_flush_command, 1, 1),
+    COMMAND_DEF("SAVE", handle_save_command, 1, 1),
+    COMMAND_DEF("BGSAVE", handle_bgsave_command, 1, 1),
+    COMMAND_DEF("REPLCONF", handle_replconf_command, 1, -1),
+    COMMAND_DEF("PSYNC", handle_psync_command, 1, -1),
+};
+
+static int register_builtin_commands(command_dispatcher_t *dispatcher) {
+    size_t count = sizeof(builtin_commands) / sizeof(builtin_commands[0]);
+    for (size_t i = 0; i < count; ++i) {
+        if (command_dispatcher_register(dispatcher, &builtin_commands[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int command_context_init(command_context_t *ctx, redis_store_t *store, redis_config_t *config) {
     if (!ctx) {
-        return;
+        return -1;
     }
     ctx->store = store;
     ctx->config = config;
+    command_dispatcher_init(&ctx->dispatcher);
+    if (register_builtin_commands(&ctx->dispatcher) != 0) {
+        command_dispatcher_free(&ctx->dispatcher);
+        return -1;
+    }
+    return 0;
 }
 
-typedef struct {
-    const char *name;
-    command_handler_fn handler;
-    int min_arity;
-    int max_arity; // -1 means unlimited
-} command_entry_t;
-
-static const command_entry_t command_table[] = {
-    {"PING", handle_ping_command, 1, 2},
-    {"ECHO", handle_echo_command, 2, 2},
-    {"SET", handle_set_command, 3, -1},
-    {"GET", handle_get_command, 2, 2},
-    {"CONFIG", handle_config_command, 2, -1},
-    {"KEYS", handle_keys_command, 1, -1},
-    {"EXPIRE", handle_expire_command, 3, 3},
-    {"PEXPIRE", handle_pexpire_command, 3, 3},
-    {"TTL", handle_ttl_command, 2, 2},
-    {"PTTL", handle_pttl_command, 2, 2},
-    {"PERSIST", handle_persist_command, 2, 2},
-    {"INFO", handle_info_command, 1, 2},
-    {"FLUSHALL", handle_flush_command, 1, 1},
-    {"FLUSHDB", handle_flush_command, 1, 1},
-    {"SAVE", handle_save_command, 1, 1},
-    {"BGSAVE", handle_bgsave_command, 1, 1},
-    {"REPLCONF", handle_replconf_command, 1, -1},
-    {"PSYNC", handle_psync_command, 1, -1},
-};
-
-static const size_t command_count = sizeof(command_table) / sizeof(command_table[0]);
-
-static void send_wrong_arity(int fd, const char *cmd_name) {
-    char lower[64];
-    size_t len = strlen(cmd_name);
-    if (len >= sizeof(lower)) {
-        len = sizeof(lower) - 1;
+void command_context_deinit(command_context_t *ctx) {
+    if (!ctx) {
+        return;
     }
-    for (size_t i = 0; i < len; ++i) {
-        lower[i] = (char)tolower((unsigned char)cmd_name[i]);
-    }
-    lower[len] = '\0';
-
-    char message[128];
-    snprintf(message, sizeof(message), "ERR wrong number of arguments for '%s' command", lower);
-    resp_send_error(fd, message);
+    command_dispatcher_free(&ctx->dispatcher);
+    ctx->store = NULL;
+    ctx->config = NULL;
 }
 
 void command_handle(int client_fd, const resp_command_t *cmd, command_context_t *ctx) {
-    if (!cmd || cmd->argc == 0) {
+    if (!ctx || !cmd || cmd->argc == 0) {
         resp_send_error(client_fd, "ERR empty command");
         return;
     }
 
-    const command_entry_t *selected = NULL;
-    for (size_t i = 0; i < command_count; ++i) {
-        if (command_str_icmp(cmd->argv[0], command_table[i].name) == 0) {
-            selected = &command_table[i];
-            break;
-        }
-    }
-
-    if (!selected) {
+    const command_spec_t *spec = command_dispatcher_find(&ctx->dispatcher, cmd->argv[0]);
+    if (!spec) {
         resp_send_error(client_fd, "ERR unknown command");
         return;
     }
 
-    if (selected->min_arity >= 0 && (int)cmd->argc < selected->min_arity) {
-        send_wrong_arity(client_fd, selected->name);
-        return;
-    }
-    if (selected->max_arity >= 0 && (int)cmd->argc > selected->max_arity) {
-        send_wrong_arity(client_fd, selected->name);
+    if (command_spec_validate(spec, client_fd, cmd, ctx) != 0) {
         return;
     }
 
-    selected->handler(client_fd, cmd, ctx);
+    spec->handler(client_fd, cmd, ctx);
 }

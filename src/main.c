@@ -21,7 +21,11 @@ int main(int argc, char **argv) {
     datastore_init(&store);
 
     command_context_t cmd_ctx;
-    command_context_init(&cmd_ctx, &store, &config);
+    if (command_context_init(&cmd_ctx, &store, &config) != 0) {
+        fprintf(stderr, "Failed to initialize command context\n");
+        datastore_free(&store);
+        return EXIT_FAILURE;
+    }
 
     if (rdb_load(&config, &store) != 0) {
         fprintf(stderr, "Failed to load RDB file\n");
@@ -38,6 +42,7 @@ int main(int argc, char **argv) {
     int server_status = server_run(&cmd_ctx);
 
     expiry_stop();
+    command_context_deinit(&cmd_ctx);
     datastore_free(&store);
     return (server_status == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
