@@ -39,7 +39,9 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
 - **Command Pipeline**: RESP parser, validator chain, dispatcher table, event bus.
 - **Execution Engine**: Command handlers keyed by feature families (core,
   key-value, expiration, admin, replication).
-- **Data Store**: Mutex-protected dictionary of key/value entries with TTL support.
+- **Data Store**: Mutex-protected dictionary of SDS-backed key/value entries with TTL support.
+- **Session Layer**: Tracks per-connection RESP protocol version, ACL state (AUTH/HELLO), and optional connection names (persisted when `--persist-connection-names` is enabled).
+- **Access Control**: Lightweight ACL manager that gates commands based on capability flags and runtime authentication requirements. Configure credentials via `--requireuser`/`--requirepass`, attach default roles with `--userrole`, and add extra accounts through `--acluser user=pass:roles`. Connections authenticate with `AUTH` or `HELLO AUTH`.
 - **Background Services**: Expiration thread, persistence strategies (sync/async),
   replication handshake stub, RDB loader/saver.
 
@@ -63,10 +65,12 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
 | **Command dispatcher** | `src/command.c`, `include/command_dispatcher.h` | Table-driven handlers, validator chains, event emission |
 | **Handlers** | `src/handlers_*.c` | Families: basic, kv, admin, expiration, replication |
 | **RESP protocol** | `src/resp.c` | Parser and serializer for RESP messages |
-| **Networking** | `src/server.c`, `src/connection.c`, `src/reactor.c`, `src/reactor_poll.c` | Reactor loop with pluggable backends, connection state machines |
+| **Networking** | `src/server.c`, `src/connection.c`, `src/reactor.c`, `src/reactor_poll.c`, `src/reactor_epoll.c`, `src/reactor_kqueue.c` | Reactor loop with pluggable backends, connection state machines |
 | **Datastore** | `src/datastore.c`, `include/datastore.h` | Hash-table key/value storage with TTL, snapshotting |
+| **SDS Strings** | `src/sds.c`, `include/sds.h` | Simple dynamic strings with optional jemalloc backing |
+| **ACL / Auth** | `src/acl.c`, `include/acl.h`, `src/handlers_admin.c` | Requirepass configuration, AUTH handler, command capability flags |
 | **Persistence** | `src/persistence.c`, `src/rdb.c` | Snapshot and future AOF hooks |
-| **Replication** | `src/replication.c` | Listener registration, handshake stub |
+| **Replication** | `src/replication.c` | Listener registration, backlog stream, master handshake |
 | **Expiry** | `src/expiry.c` | Background expiration scheduler |
 | **Documentation** | `docs/*.md` | Architecture plan, parity blueprint, this guide |
 
@@ -83,12 +87,13 @@ Each module is registered via the command context, making it easier to swap comp
 - [x] Command validation chain  
 - [x] Persistence Strategy pattern (sync/async)  
 - [x] Runtime orchestration layer  
-- [x] Hash-table datastore with automatic resizing  
-- [x] RESP handshake scaffolding (`HELLO 2/3`)  
-- [x] Replication backlog recorder (in-memory queue)  
-- [ ] Production-grade dictionary & allocator  
-- [ ] RESP3 negotiation scaffolding  
-- [ ] Finish replication observer pipeline
+- [x] Hash-table datastore with SDS-backed keys/values  
+- [x] Pluggable reactor backends (poll/epoll/kqueue)  
+- [x] RESP handshake scaffolding (`HELLO 2/3`) with session protocols  
+- [x] SDS string layer with optional jemalloc allocator  
+- [x] Command capability flags + per-connection ACL sessions (AUTH/HELLO AUTH)  
+- [x] Replication backlog recorder and streaming pipeline  
+- [ ] Enable jemalloc by default (post-benchmark)
 
 **Phase 1 – Persistence & Replication Parity**  
 - Implement AOF writer + rewrite  
@@ -122,8 +127,8 @@ Refer to `docs/redis_parity_design.md` for the in-depth blueprint.
 |---------|------|------------|
 | v0.1 (Baseline) | 2025-09 | Modularized legacy `server.c`; RESP parser; basic commands; RDB load |
 | v0.2 | 2025-10 | Added persistence strategies, replication listener skeleton, reactor networking, command validator chain |
-| v0.3 | 2025-10 | Hash-table datastore, runtime subsystem registry, RESP `HELLO` scaffolding, replication backlog |
-| v0.3 (Planned) | Q1 2026 | Production-grade dict/sds, AOF writer, PSYNC2 partial resync |
+| v0.3 | 2025-10 | Hash-table datastore, pluggable reactor backends, SDS string layer, ACL/`AUTH` scaffolding, replication backlog |
+| v0.4 (Planned) | Q1 2026 | Production-grade dict/jemalloc defaults, AOF writer, PSYNC2 partial resync |
 | v1.0 (Target) | TBD | Redis-parity release: cluster, replication, persistence, modules |
 
 Change logs will be maintained in `CHANGELOG.md` once releases are tagged.
@@ -177,11 +182,15 @@ Mitigation: maintain milestone-specific acceptance tests, CI pipelines, benchmar
 
 ```bash
 # Build and run (WSL/Linux)
-make
-./redis-server --dir /tmp/rdbfile --dbfilename dump.rdb --port 6380
+make                 # default build
+make JEMALLOC=1      # optional: link with jemalloc
+./redis-server --dir /tmp/rdbfile --dbfilename dump.rdb --port 6380 --requirepass secret
+
+Benchmarking is in flight to determine whether jemalloc should ship as the default allocator; keep building with `JEMALLOC=1` when collecting performance data so we can flip the default with confidence.
 
 # Example commands
 printf '*1\r\n$4\r\nPING\r\n' | nc -q1 127.0.0.1 6380
+printf '*2\r\n$4\r\nAUTH\r\n$6\r\nsecret\r\n' | nc -q1 127.0.0.1 6380
 printf '*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n' | nc -q1 127.0.0.1 6380
 printf '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n' | nc -q1 127.0.0.1 6380
 ```
@@ -221,3 +230,9 @@ Server logs (stdout) display replication observer messages, persistence outcomes
 This guide should evolve alongside the code. Every milestone should update the
 roadmap, strengths/challenges, and version history so future readers can trace
 the journey from educational prototype to production-ready Redis alternative.
+
+
+
+
+
+

@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -222,6 +223,66 @@ int resp_send_array(int fd, const char *const *items, size_t count) {
     }
     for (size_t i = 0; i < count; ++i) {
         if (resp_send_bulk_string(fd, items[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int resp_send_null(int fd, int resp_version) {
+    if (resp_version >= 3) {
+        return send_formatted(fd, "_\r\n");
+    }
+    return resp_send_null_bulk_string(fd);
+}
+
+int resp_send_set(int fd, const char *const *items, size_t count) {
+    if (send_formatted(fd, "~%zu\r\n", count) != 0) {
+        return -1;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (items && items[i]) {
+            if (resp_send_bulk_string(fd, items[i]) != 0) {
+                return -1;
+            }
+        } else {
+            if (resp_send_null_bulk_string(fd) != 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+int resp_send_bool(int fd, int resp_version, bool value) {
+    if (resp_version >= 3) {
+        return send_formatted(fd, "#%c\r\n", value ? 't' : 'f');
+    }
+    return resp_send_integer(fd, value ? 1 : 0);
+}
+
+int resp_send_string_map(int fd,
+                         const char *const *keys,
+                         const char *const *values,
+                         size_t count,
+                         int resp_version) {
+    if (resp_version >= 3) {
+        if (send_formatted(fd, "%%%zu\r\n", count) != 0) {
+            return -1;
+        }
+    } else {
+        if (send_formatted(fd, "*%zu\r\n", count * 2) != 0) {
+            return -1;
+        }
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        const char *key = (keys && keys[i]) ? keys[i] : "";
+        const char *value = (values) ? values[i] : NULL;
+        if (resp_send_bulk_string(fd, key) != 0) {
+            return -1;
+        }
+        if (resp_send_bulk_string(fd, value) != 0) {
             return -1;
         }
     }

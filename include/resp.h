@@ -1,6 +1,7 @@
 #ifndef RESP_H
 #define RESP_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 typedef struct {
@@ -21,5 +22,13 @@ int resp_send_bulk_string(int fd, const char *msg);
 int resp_send_null_bulk_string(int fd);
 int resp_send_integer(int fd, long long value);
 int resp_send_array(int fd, const char *const *items, size_t count);
+int resp_send_null(int fd, int resp_version);
+int resp_send_set(int fd, const char *const *items, size_t count);
+int resp_send_bool(int fd, int resp_version, bool value);
+int resp_send_string_map(int fd,
+                         const char *const *keys,
+                         const char *const *values,
+                         size_t count,
+                         int resp_version);
 
 #endif // RESP_H

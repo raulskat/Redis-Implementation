@@ -6,9 +6,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sds.h"
+
 typedef struct redis_entry {
-    char *key;
-    char *value;
+    sds key;
+    sds value;
     uint64_t expiry_ms; // absolute expiration timestamp (0 means persistent)
     struct redis_entry *next;
 } redis_entry_t;

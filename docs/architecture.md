@@ -23,6 +23,8 @@
 |   +-- rdb.h
 |   +-- reactor.h
 |   +-- runtime.h
+|   +-- acl.h
+|   +-- sds.h
 |   +-- server.h
 +-- src/
 |   +-- command.c
@@ -44,24 +46,31 @@
 |   +-- rdb.c
 |   +-- expiry.c
 |   +-- reactor.c
+|   +-- reactor_epoll.c
+|   +-- reactor_kqueue.c
+|   +-- reactor_poll.c
 |   +-- runtime.c
+|   +-- acl.c
+|   +-- sds.c
 ```
 
 ## Module Responsibilities
 - **config**: Parse CLI arguments, hold runtime configuration, expose helpers.
-- **datastore**: Manage hash-table key/value storage, TTL bookkeeping, concurrency control.
+- **datastore**: Manage hash-table key/value storage, SDS-backed keys/values, TTL bookkeeping, concurrency control.
 - **resp**: Read/write RESP frames, convert socket buffers into argument vectors.
 - **command**: Central dispatch table that routes parsed commands to specialised handlers.
 - **command handlers**: Implement individual command families (core ops, key/value, expiration, persistence, replication).
 - **rdb**: Load the initial dataset from disk and provide helpers for writing RDB snapshots.
 - **server**: Register listening sockets with the reactor and glue network activity into the command layer.
-- **reactor**: Provide a backend-agnostic event loop abstraction (currently `poll`, pluggable to epoll/kqueue) to multiplex sockets.
+- **reactor**: Provide a backend-agnostic event loop abstraction (`poll`, `epoll`, `kqueue`) to multiplex sockets.
 - **connection**: Own the per-connection RESP decode/send loop so transport concerns stay isolated.
 - **replication**: Handle master/slave negotiation, keep sockets to master alive, stream updates.
 - **persistence**: Coordinate synchronous/background saves, manage SAVE/BGSAVE state, and call into the RDB writer.
 - **expiry**: Run the active expiration scheduler that periodically prunes stale keys.
 - **runtime**: Central application coordinator with a subsystem registry that orchestrates configuration, datastore lifecycle, optional/mandatory subsystem startup, and graceful shutdown.
 - **command dispatcher/events**: Maintain the command registry, validation chains, and observer hooks for replication/metrics.
+- **acl**: Manage global authentication/authorization state (requirepass, AUTH command) and enforce command capability flags.
+- **sds**: Provide a Redis-style dynamic string abstraction with optional jemalloc backing.
 
 ## Phase Roadmap
 - **Phase 1** - Foundations (complete): Modular code layout, fix parsing bugs, basic RESP command set (PING/ECHO/SET/GET/KEYS/CONFIG/INFO), RDB load, single-threaded correctness with mutex-protected store.
@@ -73,3 +82,5 @@
 
 
 Each phase will keep the modules isolated so we can iterate without large-scale rewrites.
+
+

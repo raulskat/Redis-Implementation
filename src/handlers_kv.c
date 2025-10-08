@@ -8,7 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-int handle_set_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
+int handle_set_command(int fd, const resp_command_t *cmd, command_context_t *ctx, command_session_t *session) {
+    (void)session;
     if (cmd->argc < 3) {
         return resp_send_error(fd, "ERR wrong number of arguments for 'set' command");
     }
@@ -50,32 +51,43 @@ int handle_set_command(int fd, const resp_command_t *cmd, command_context_t *ctx
     return resp_send_simple_string(fd, "OK");
 }
 
-int handle_get_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
+int handle_get_command(int fd, const resp_command_t *cmd, command_context_t *ctx, command_session_t *session) {
+    (void)session;
     if (cmd->argc < 2) {
         return resp_send_error(fd, "ERR wrong number of arguments for 'get' command");
     }
     char *value = NULL;
     if (datastore_get(ctx->store, cmd->argv[1], &value) != 0) {
-        return resp_send_null_bulk_string(fd);
+        int version = session ? session->resp_version : 2;
+        return resp_send_null(fd, version);
     }
     int result = resp_send_bulk_string(fd, value);
     free(value);
     return result;
 }
 
-int handle_keys_command(int fd, const resp_command_t *cmd, command_context_t *ctx) {
-    (void)cmd;
+int handle_keys_command(int fd, const resp_command_t *cmd, command_context_t *ctx, command_session_t *session) {
+    (void)cmd; (void)session;
     char **keys = NULL;
     size_t count = 0;
     if (datastore_keys(ctx->store, &keys, &count) != 0) {
         return resp_send_error(fd, "ERR failed to enumerate keys");
     }
     int status = 0;
+    int version = session ? session->resp_version : 2;
     if (count == 0) {
-        status = resp_send_array(fd, NULL, 0);
+        if (version >= 3) {
+            status = resp_send_set(fd, NULL, 0);
+        } else {
+            status = resp_send_array(fd, NULL, 0);
+        }
     } else {
         const char **items = (const char **)keys;
-        status = resp_send_array(fd, items, count);
+        if (version >= 3) {
+            status = resp_send_set(fd, items, count);
+        } else {
+            status = resp_send_array(fd, items, count);
+        }
     }
     for (size_t i = 0; i < count; ++i) {
         free(keys[i]);

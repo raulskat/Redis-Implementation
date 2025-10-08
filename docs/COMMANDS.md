@@ -20,6 +20,11 @@ redis-cli form (COMMAND arg �).
 | --dbfilename <file> | Snapshot filename written inside --dir. | --dbfilename dump.rdb |
 | --port <int> | TCP port to listen on (default 6379). | --port 6380 |
 | --replicaof <host> <port> | Start as a replica of a master at <host>:<port>. | --replicaof 127.0.0.1 6379 |
+| --requireuser <name> | Override the default ACL username (`default` if omitted). | --requireuser app |
+| --requirepass <password> | Password for the default ACL user. | --requirepass s3cret |
+| --userrole <roles> | Role mask for the default user (`read`,`write`,`admin`,`all`). | --userrole read,write |
+| --acluser <user=pass:roles> | Register additional ACL users with role masks. | --acluser analytics=sekret:read |
+| --persist-connection-names | Keep HELLO `SETNAME` values across session resets. | --persist-connection-names |
 
 ### 1.2 Shutdown
 
@@ -49,12 +54,11 @@ redis-cli -p <port> shutdown for a graceful stop. The server flushes in-flight w
 
 ### 2.4 GET
 - **Syntax**: GET KEY
-- **Response**: bulk string value or 
-il if missing/expired.
+- **Response**: Bulk string value; Null (`$-1` in RESP2, `_` in RESP3) if missing/expired.
 
 ### 2.5 KEYS
 - **Syntax**: KEYS *
-- **Response**: Array of all currently live keys.
+- **Response**: Array of all currently live keys (RESP3 clients receive a set).
 - **Notes**: No pattern matching yet; used mostly for debugging. TTL pruning is triggered before the list is produced.
 
 ### 2.6 FLUSHALL / FLUSHDB
@@ -70,12 +74,12 @@ All expiration times are stored as absolute millisecond timestamps. Expired keys
 
 ### 3.1 EXPIRE
 - **Syntax**: EXPIRE KEY seconds
-- **Response**: Integer 1 if TTL set, Nil if key absent or already gone.
+- **Response**: RESP2 returns integer 1/0; RESP3 returns boolean `#t`/`#f`.
 - **Notes**: Zero/negative seconds expires immediately.
 
 ### 3.2 PEXPIRE
 - **Syntax**: PEXPIRE KEY milliseconds
-- **Response**: Integer 1 on success, Nil otherwise.
+- **Response**: RESP2 returns integer 1/0; RESP3 returns boolean `#t`/`#f`.
 
 ### 3.3 TTL
 - **Syntax**: TTL KEY
@@ -93,7 +97,7 @@ All expiration times are stored as absolute millisecond timestamps. Expired keys
 
 ### 3.5 PERSIST
 - **Syntax**: PERSIST KEY
-- **Response**: Integer 1 if key�s TTL cleared; Nil if key missing or already persistent.
+- **Response**: RESP2 returns integer 1/0; RESP3 returns boolean `#t`/`#f`.
 
 ### Background Expiration
 - A dedicated thread wakes every 100 ms (configurable in source) and prunes up to 128 stale keys per cycle. This keeps the dataset lean even without client access.
@@ -121,7 +125,7 @@ All expiration times are stored as absolute millisecond timestamps. Expired keys
 
 ### 5.1 CONFIG GET <param>
 - **Supported params**: dir, dbfilename
-- **Response**: Two-element array [param, value] or empty array if unknown.
+- **Response**: RESP2 returns `[param, value]`; RESP3 returns a map of matching pairs; both return an empty collection if unknown.
 
 ### 5.2 INFO [section]
 - **Supported sections**: (default) overall, 
@@ -212,3 +216,6 @@ edis-cli -p <port> ping. |
 ---
 
 Happy hacking with RedisFoundry! For deeper architectural notes, see docs/architecture.md and follow the phase roadmap as new features land.
+
+
+

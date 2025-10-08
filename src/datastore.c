@@ -47,12 +47,26 @@ static int ensure_buckets(redis_store_t *store) {
     return 0;
 }
 
+static char *sds_to_cstring(const sds value) {
+    if (!value) {
+        return NULL;
+    }
+    size_t len = sdslen(value);
+    char *copy = malloc(len + 1);
+    if (!copy) {
+        return NULL;
+    }
+    memcpy(copy, value, len);
+    copy[len] = '\0';
+    return copy;
+}
+
 static void entry_free(redis_entry_t *entry) {
     if (!entry) {
         return;
     }
-    free(entry->key);
-    free(entry->value);
+    sdsfree(entry->key);
+    sdsfree(entry->value);
     free(entry);
 }
 
@@ -185,8 +199,8 @@ static redis_entry_t *entry_create(const char *key, const char *value, uint64_t 
     if (!entry) {
         return NULL;
     }
-    entry->key = strdup(key);
-    entry->value = strdup(value);
+        entry->key = sdsnew(key);
+    entry->value = sdsnew(value);
     if (!entry->key || !entry->value) {
         entry_free(entry);
         return NULL;
@@ -218,12 +232,12 @@ int datastore_set(redis_store_t *store, const char *key, const char *value, uint
         remove_if_expired(store, slot, now_ms, &removed);
         if (!removed && *slot) {
             redis_entry_t *entry = *slot;
-            char *new_value = strdup(value);
+            sds new_value = sdsnew(value);
             if (!new_value) {
                 pthread_mutex_unlock(&store->lock);
                 return -1;
             }
-            free(entry->value);
+            sdsfree(entry->value);
             entry->value = new_value;
             entry->expiry_ms = expiry_ms;
             pthread_mutex_unlock(&store->lock);
@@ -273,7 +287,7 @@ int datastore_get(redis_store_t *store, const char *key, char **value_out) {
         return -1;
     }
 
-    char *copy = strdup((*slot)->value);
+    char *copy = sds_to_cstring((*slot)->value);
     if (!copy) {
         pthread_mutex_unlock(&store->lock);
         return -1;
@@ -310,7 +324,7 @@ int datastore_keys(redis_store_t *store, char ***keys_out, size_t *count_out) {
             if (remove_if_expired(store, slot, now_ms, NULL)) {
                 continue;
             }
-            char *copy = strdup((*slot)->key);
+            char *copy = sds_to_cstring((*slot)->key);
             if (!copy) {
                 for (size_t k = 0; k < count; ++k) {
                     free(keys[k]);
@@ -361,7 +375,7 @@ int datastore_snapshot(redis_store_t *store,
             }
             redis_entry_t *entry = *slot;
             entries[count].key = strdup(entry->key);
-            entries[count].value = strdup(entry->value);
+            entries[count].value = sds_to_cstring(entry->value);
             entries[count].expiry_ms = entry->expiry_ms;
             if (!entries[count].key || !entries[count].value) {
                 for (size_t j = 0; j <= count; ++j) {

@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,24 @@ static size_t backlog_bytes = 0;
 static size_t backlog_count = 0;
 
 static int replication_listener_registered = 0;
+
+static int send_all(int fd, const char *buf, size_t len) {
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t rc = send(fd, buf + sent, len - sent, 0);
+        if (rc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (rc == 0) {
+            return -1;
+        }
+        sent += (size_t)rc;
+    }
+    return 0;
+}
 
 static void backlog_append(replication_backlog_entry_t *entry) {
     if (!entry) {
@@ -87,6 +106,20 @@ size_t replication_backlog_bytes(void) {
     size_t bytes = backlog_bytes;
     pthread_mutex_unlock(&backlog_lock);
     return bytes;
+}
+
+int replication_backlog_stream(int fd) {
+    pthread_mutex_lock(&backlog_lock);
+    replication_backlog_entry_t *entry = backlog_head;
+    while (entry) {
+        if (send_all(fd, entry->payload, entry->length) != 0) {
+            pthread_mutex_unlock(&backlog_lock);
+            return -1;
+        }
+        entry = entry->next;
+    }
+    pthread_mutex_unlock(&backlog_lock);
+    return 0;
 }
 
 static char *serialize_command(const resp_command_t *cmd, size_t *out_len) {
@@ -278,3 +311,6 @@ int replication_start(command_context_t *ctx) {
     pthread_detach(thread_id);
     return 0;
 }
+
+
+

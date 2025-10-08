@@ -1,5 +1,6 @@
 #include "command_dispatcher.h"
 
+#include "command.h"
 #include "command_utils.h"
 #include "resp.h"
 
@@ -97,7 +98,8 @@ static void send_wrong_arity(int client_fd, const char *cmd_name) {
 int command_spec_validate(const command_spec_t *spec,
                           int client_fd,
                           const resp_command_t *cmd,
-                          const command_context_t *ctx) {
+                          const command_context_t *ctx,
+                          const command_session_t *session) {
     if (!spec || !cmd) {
         return -1;
     }
@@ -110,6 +112,45 @@ int command_spec_validate(const command_spec_t *spec,
         send_wrong_arity(client_fd, spec->name);
         return -1;
     }
+
+    const acl_state_t *acl = NULL;
+    if (session) {
+        acl = &session->acl;
+    } else if (ctx) {
+        acl = &ctx->acl;
+    }
+
+    bool allow_unauthed = (spec->flags & CMD_FLAG_ALLOW_UNAUTH) != 0;
+    if (!allow_unauthed) {
+        if (!acl || (acl_requires_auth(acl) && !acl_is_authenticated(acl))) {
+            resp_send_error(client_fd, "NOAUTH Authentication required.");
+            return -1;
+        }
+    }
+
+    unsigned int required_roles = 0;
+    if (spec->flags & CMD_FLAG_ADMIN) {
+        required_roles |= ACL_ROLE_ADMIN;
+    }
+    if (spec->flags & CMD_FLAG_WRITE) {
+        required_roles |= ACL_ROLE_WRITE;
+    }
+    if (spec->flags & CMD_FLAG_READONLY) {
+        required_roles |= ACL_ROLE_READ;
+    }
+
+    if (required_roles && acl) {
+        if (!acl_is_authenticated(acl)) {
+            if (!allow_unauthed) {
+                resp_send_error(client_fd, "NOAUTH Authentication required.");
+                return -1;
+            }
+        } else if (!acl_has_role(acl, required_roles)) {
+            resp_send_error(client_fd, "NOPERM this user has no access to the command");
+            return -1;
+        }
+    }
+
     if (spec->validator_count > 0 && spec->validators) {
         for (size_t i = 0; i < spec->validator_count; ++i) {
             const command_validator_t *validator = &spec->validators[i];
@@ -117,7 +158,7 @@ int command_spec_validate(const command_spec_t *spec,
                 continue;
             }
             char error_buf[128] = {0};
-            int rc = validator->fn(cmd, ctx, error_buf, sizeof(error_buf));
+            int rc = validator->fn(cmd, ctx, session, error_buf, sizeof(error_buf));
             if (rc != 0) {
                 if (error_buf[0] == '\0') {
                     snprintf(error_buf, sizeof(error_buf), "ERR invalid arguments");

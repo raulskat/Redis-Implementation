@@ -254,6 +254,6 @@ static const reactor_backend_t poll_backend = {
     .run = poll_run,
 };
 
-const reactor_backend_t *reactor_backend_default(void) {
+const reactor_backend_t *reactor_backend_poll(void) {
     return &poll_backend;
 }

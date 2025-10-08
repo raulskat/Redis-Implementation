@@ -6,6 +6,12 @@ TARGET = redis-server
 SRC = $(wildcard src/*.c)
 OBJ = $(SRC:.c=.o)
 
+JEMALLOC ?= 0
+ifeq ($(JEMALLOC),1)
+CFLAGS += -DHAVE_JEMALLOC
+LDFLAGS += -ljemalloc
+endif
+
 $(TARGET): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
 

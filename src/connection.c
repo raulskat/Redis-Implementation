@@ -13,6 +13,7 @@
 struct connection_state {
     int fd;
     command_context_t *ctx;
+    command_session_t session;
     char buffer[CONNECTION_BUFFER_SIZE];
     size_t buffered;
 };
@@ -35,7 +36,7 @@ static int process_buffer(connection_state_t *state) {
             break;
         }
 
-        command_handle(state->fd, &cmd, state->ctx);
+        command_handle(state->fd, &cmd, state->ctx, &state->session);
         resp_command_free(&cmd);
         offset += consumed;
     }
@@ -57,6 +58,7 @@ connection_state_t *connection_state_create(int fd, command_context_t *ctx) {
     }
     state->fd = fd;
     state->ctx = ctx;
+    command_session_init(&state->session, ctx);
     state->buffered = 0;
     return state;
 }

@@ -181,9 +181,12 @@
 - [x] Command dispatcher + validator metadata scaffolding
 - [x] Hash-table datastore with TTL and snapshot support
 - [x] RESP handshake scaffolding (`HELLO` 2/3) and replication backlog recorder
-- [ ] Backend-agnostic poller abstraction (`epoll`/`kqueue`) with transport adapters
-- [ ] Upgrade string/allocator layer (SDS, jemalloc integration)
-- [ ] Extend validator metadata and ACL scaffolding
+- [x] Backend-agnostic poller abstraction (`epoll`/`kqueue`) with transport adapters
+- [x] Upgrade string/allocator layer (SDS, jemalloc integration)
+- [x] Extend validator metadata and ACL scaffolding
+- [x] Per-connection ACL sessions (password-based)
+- [x] Username/role-based ACL support (multi-account CLI, role masks)
+- [ ] Enable jemalloc by default once benchmarks confirm benefit
 
 ### Phase 1 – Persistence & Replication Parity
 - Introduce AOF writer, rewrite pipeline, append-only configuration.
@@ -249,3 +252,4 @@ future projects that need Redis-like capabilities or embed the server as an
 internal cache. By driving toward the milestones above, we can iteratively reach
 feature and performance parity with upstream Redis while keeping the codebase
 modular, testable, and extensible.
+
