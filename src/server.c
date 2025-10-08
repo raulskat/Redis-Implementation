@@ -1,10 +1,11 @@
 #include "server.h"
 #include "connection.h"
+#include "reactor.h"
 
 #include <errno.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <pthread.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,18 +13,70 @@
 #include <unistd.h>
 
 typedef struct {
-    int fd;
+    reactor_t *reactor;
     command_context_t *ctx;
-} connection_job_t;
+} server_acceptor_t;
 
-static void *client_thread(void *arg) {
-    connection_job_t *job = (connection_job_t *)arg;
-    int fd = job->fd;
-    command_context_t *ctx = job->ctx;
-    free(job);
+static int make_socket_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) {
+        return -1;
+    }
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        return -1;
+    }
+    return 0;
+}
 
-    connection_serve(fd, ctx);
-    return NULL;
+static reactor_event_result_t server_accept_handler(int fd, short events, void *userdata) {
+    server_acceptor_t *acceptor = (server_acceptor_t *)userdata;
+    if (!acceptor || !acceptor->reactor || !acceptor->ctx) {
+        return REACTOR_EVENT_REMOVE;
+    }
+
+    if (events & (POLLERR | POLLNVAL | POLLHUP)) {
+        perror("acceptor socket error");
+        return REACTOR_EVENT_REMOVE;
+    }
+
+    while (1) {
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int client_fd = accept(fd, (struct sockaddr *)&client_addr, &client_len);
+        if (client_fd < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            }
+            if (errno == EINTR) {
+                continue;
+            }
+            perror("accept");
+            return REACTOR_EVENT_REMOVE;
+        }
+
+        if (make_socket_nonblocking(client_fd) != 0) {
+            perror("fcntl");
+            close(client_fd);
+            continue;
+        }
+
+        connection_state_t *state = connection_state_create(client_fd, acceptor->ctx);
+        if (!state) {
+            close(client_fd);
+            continue;
+        }
+
+        if (reactor_add(acceptor->reactor,
+                        client_fd,
+                        POLLIN | POLLERR | POLLHUP,
+                        connection_handle_event,
+                        state) != 0) {
+            connection_state_destroy(state);
+            continue;
+        }
+    }
+
+    return REACTOR_EVENT_CONTINUE;
 }
 
 int server_run(command_context_t *ctx) {
@@ -40,6 +93,12 @@ int server_run(command_context_t *ctx) {
     int reuse = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
         perror("setsockopt");
+        close(server_fd);
+        return -1;
+    }
+
+    if (make_socket_nonblocking(server_fd) != 0) {
+        perror("fcntl");
         close(server_fd);
         return -1;
     }
@@ -64,36 +123,23 @@ int server_run(command_context_t *ctx) {
 
     printf("Redis server listening on port %d\n", ctx->config->port);
 
-    while (1) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-        if (client_fd < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            perror("accept");
-            break;
-        }
+    reactor_t reactor;
+    reactor_init(&reactor);
 
-        connection_job_t *job = malloc(sizeof(*job));
-        if (!job) {
-            close(client_fd);
-            continue;
-        }
-        job->fd = client_fd;
-        job->ctx = ctx;
+    server_acceptor_t acceptor = {
+        .reactor = &reactor,
+        .ctx = ctx,
+    };
 
-        pthread_t thread_id;
-        if (pthread_create(&thread_id, NULL, client_thread, job) != 0) {
-            perror("pthread_create");
-            close(client_fd);
-            free(job);
-            continue;
-        }
-        pthread_detach(thread_id);
+    if (reactor_add(&reactor, server_fd, POLLIN, server_accept_handler, &acceptor) != 0) {
+        fprintf(stderr, "Failed to register server socket with reactor\n");
+        reactor_deinit(&reactor);
+        close(server_fd);
+        return -1;
     }
 
+    int rc = reactor_run(&reactor);
+    reactor_deinit(&reactor);
     close(server_fd);
-    return 0;
+    return rc;
 }

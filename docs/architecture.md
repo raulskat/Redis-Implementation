@@ -9,6 +9,8 @@
 ```
 +-- include/
 |   +-- command.h
+|   +-- command_dispatcher.h
+|   +-- command_events.h
 |   +-- command_handlers.h
 |   +-- command_utils.h
 |   +-- config.h
@@ -19,9 +21,13 @@
 |   +-- replication.h
 |   +-- resp.h
 |   +-- rdb.h
+|   +-- reactor.h
+|   +-- runtime.h
 |   +-- server.h
 +-- src/
 |   +-- command.c
+|   +-- command_dispatcher.c
+|   +-- command_events.c
 |   +-- command_utils.c
 |   +-- config.c
 |   +-- connection.c
@@ -37,6 +43,8 @@
 |   +-- resp.c
 |   +-- rdb.c
 |   +-- expiry.c
+|   +-- reactor.c
+|   +-- runtime.c
 ```
 
 ## Module Responsibilities
@@ -46,11 +54,14 @@
 - **command**: Central dispatch table that routes parsed commands to specialised handlers.
 - **command handlers**: Implement individual command families (core ops, key/value, expiration, persistence, replication).
 - **rdb**: Load the initial dataset from disk and provide helpers for writing RDB snapshots.
-- **server**: Accept clients, spin up handler threads, bridge sockets with the command layer.
+- **server**: Register listening sockets with the reactor and glue network activity into the command layer.
+- **reactor**: Provide a backend-agnostic event loop abstraction (poll/epoll/kqueue) to multiplex sockets.
 - **connection**: Own the per-connection RESP decode/send loop so transport concerns stay isolated.
 - **replication**: Handle master/slave negotiation, keep sockets to master alive, stream updates.
 - **persistence**: Coordinate synchronous/background saves, manage SAVE/BGSAVE state, and call into the RDB writer.
 - **expiry**: Run the active expiration scheduler that periodically prunes stale keys.
+- **runtime**: Central application coordinator that orchestrates configuration, datastore lifecycle, subsystems startup, and graceful shutdown.
+- **command dispatcher/events**: Maintain the command registry, validation chains, and observer hooks for replication/metrics.
 
 ## Phase Roadmap
 - **Phase 1** - Foundations (complete): Modular code layout, fix parsing bugs, basic RESP command set (PING/ECHO/SET/GET/KEYS/CONFIG/INFO), RDB load, single-threaded correctness with mutex-protected store.

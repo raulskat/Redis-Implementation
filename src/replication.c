@@ -13,6 +13,43 @@ typedef struct {
     command_context_t *ctx;
 } replication_args_t;
 
+static int replication_listener_registered = 0;
+
+static int replication_command_listener(const command_event_t *event, void *userdata) {
+    (void)userdata;
+    if (!event || !event->command_name) {
+        return 0;
+    }
+    if (event->handler_result != 0) {
+        return 0;
+    }
+
+    switch (event->type) {
+    case COMMAND_EVENT_WRITE:
+    case COMMAND_EVENT_DELETE:
+    case COMMAND_EVENT_EXPIRY:
+        printf("Queued command for replication: %s\n", event->command_name);
+        break;
+    default:
+        break;
+    }
+    return 0;
+}
+
+int replication_attach(command_context_t *ctx) {
+    if (!ctx) {
+        return -1;
+    }
+    if (replication_listener_registered) {
+        return 0;
+    }
+    if (command_context_add_listener(ctx, replication_command_listener, ctx) != 0) {
+        return -1;
+    }
+    replication_listener_registered = 1;
+    return 0;
+}
+
 static int send_line(int fd, const char *line) {
     size_t len = strlen(line);
     return (send(fd, line, len, 0) == (ssize_t)len) ? 0 : -1;
@@ -91,7 +128,7 @@ static void *replication_thread(void *data) {
 
 int replication_start(command_context_t *ctx) {
     if (!ctx || !ctx->config || !ctx->config->is_slave) {
-        return 0;
+        return replication_attach(ctx);
     }
 
     replication_args_t *args = malloc(sizeof(replication_args_t));

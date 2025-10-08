@@ -1,48 +1,20 @@
-#include "command.h"
-#include "config.h"
-#include "datastore.h"
-#include "expiry.h"
-#include "rdb.h"
-#include "replication.h"
-#include "server.h"
+#include "runtime.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 int main(int argc, char **argv) {
-    redis_config_t config;
-    config_init(&config);
-    if (config_parse_args(&config, argc, argv) != 0) {
-        fprintf(stderr, "Failed to parse command-line arguments\n");
+    runtime_t runtime;
+    runtime_init(&runtime);
+
+    runtime_status_t status = runtime_bootstrap(&runtime, argc, argv);
+    if (status != RUNTIME_OK) {
+        runtime_shutdown(&runtime);
         return EXIT_FAILURE;
     }
 
-    redis_store_t store;
-    datastore_init(&store);
+    status = runtime_start(&runtime);
+    runtime_shutdown(&runtime);
 
-    command_context_t cmd_ctx;
-    if (command_context_init(&cmd_ctx, &store, &config) != 0) {
-        fprintf(stderr, "Failed to initialize command context\n");
-        datastore_free(&store);
-        return EXIT_FAILURE;
-    }
-
-    if (rdb_load(&config, &store) != 0) {
-        fprintf(stderr, "Failed to load RDB file\n");
-    }
-
-    if (expiry_start(&store) != 0) {
-        fprintf(stderr, "Warning: failed to start expiration scheduler\n");
-    }
-
-    if (replication_start(&cmd_ctx) != 0) {
-        fprintf(stderr, "Warning: replication thread failed to start\n");
-    }
-
-    int server_status = server_run(&cmd_ctx);
-
-    expiry_stop();
-    command_context_deinit(&cmd_ctx);
-    datastore_free(&store);
-    return (server_status == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+    return (status == RUNTIME_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

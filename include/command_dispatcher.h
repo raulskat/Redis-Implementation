@@ -15,9 +15,14 @@ typedef int (*command_validator_fn)(const resp_command_t *cmd,
                                     size_t error_buf_len);
 
 typedef struct {
+    command_validator_fn fn;
+} command_validator_t;
+
+typedef struct {
     const char *name;
     command_handler_fn handler;
-    command_validator_fn validator;
+    const command_validator_t *validators;
+    size_t validator_count;
     int min_arity;
     int max_arity; /* -1 means unlimited */
 } command_spec_t;

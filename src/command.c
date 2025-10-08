@@ -7,9 +7,7 @@
 #include <string.h>
 
 #define COMMAND_DEF(NAME, HANDLER, MIN, MAX) \
-    { .name = NAME, .handler = HANDLER, .validator = NULL, .min_arity = MIN, .max_arity = MAX }
-#define COMMAND_DEF_WITH_VALIDATOR(NAME, HANDLER, MIN, MAX, VALIDATOR) \
-    { .name = NAME, .handler = HANDLER, .validator = VALIDATOR, .min_arity = MIN, .max_arity = MAX }
+    { .name = NAME, .handler = HANDLER, .validators = NULL, .validator_count = 0, .min_arity = MIN, .max_arity = MAX }
 
 static int validate_config_command(const resp_command_t *cmd,
                                    const command_context_t *ctx,
@@ -45,19 +43,37 @@ static int validate_info_command(const resp_command_t *cmd,
     return 0;
 }
 
+static const command_validator_t config_validators[] = {
+    {.fn = validate_config_command},
+};
+
+static const command_validator_t info_validators[] = {
+    {.fn = validate_info_command},
+};
+
 static const command_spec_t builtin_commands[] = {
     COMMAND_DEF("PING", handle_ping_command, 1, 2),
     COMMAND_DEF("ECHO", handle_echo_command, 2, 2),
     COMMAND_DEF("SET", handle_set_command, 3, -1),
     COMMAND_DEF("GET", handle_get_command, 2, 2),
-    COMMAND_DEF_WITH_VALIDATOR("CONFIG", handle_config_command, 3, -1, validate_config_command),
+    {.name = "CONFIG",
+     .handler = handle_config_command,
+     .validators = config_validators,
+     .validator_count = sizeof(config_validators) / sizeof(config_validators[0]),
+     .min_arity = 3,
+     .max_arity = -1},
     COMMAND_DEF("KEYS", handle_keys_command, 1, -1),
     COMMAND_DEF("EXPIRE", handle_expire_command, 3, 3),
     COMMAND_DEF("PEXPIRE", handle_pexpire_command, 3, 3),
     COMMAND_DEF("TTL", handle_ttl_command, 2, 2),
     COMMAND_DEF("PTTL", handle_pttl_command, 2, 2),
     COMMAND_DEF("PERSIST", handle_persist_command, 2, 2),
-    COMMAND_DEF_WITH_VALIDATOR("INFO", handle_info_command, 1, 2, validate_info_command),
+    {.name = "INFO",
+     .handler = handle_info_command,
+     .validators = info_validators,
+     .validator_count = sizeof(info_validators) / sizeof(info_validators[0]),
+     .min_arity = 1,
+     .max_arity = 2},
     COMMAND_DEF("FLUSHALL", handle_flush_command, 1, 1),
     COMMAND_DEF("FLUSHDB", handle_flush_command, 1, 1),
     COMMAND_DEF("SAVE", handle_save_command, 1, 1),
@@ -83,8 +99,10 @@ int command_context_init(command_context_t *ctx, redis_store_t *store, redis_con
     ctx->store = store;
     ctx->config = config;
     command_dispatcher_init(&ctx->dispatcher);
+    command_event_dispatcher_init(&ctx->event_dispatcher);
     if (register_builtin_commands(&ctx->dispatcher) != 0) {
         command_dispatcher_free(&ctx->dispatcher);
+        command_event_dispatcher_deinit(&ctx->event_dispatcher);
         return -1;
     }
     return 0;
@@ -94,9 +112,46 @@ void command_context_deinit(command_context_t *ctx) {
     if (!ctx) {
         return;
     }
+    command_context_remove_listeners(ctx);
+    command_event_dispatcher_deinit(&ctx->event_dispatcher);
     command_dispatcher_free(&ctx->dispatcher);
     ctx->store = NULL;
     ctx->config = NULL;
+}
+
+int command_context_add_listener(command_context_t *ctx,
+                                 command_event_listener_fn fn,
+                                 void *userdata) {
+    if (!ctx) {
+        return -1;
+    }
+    return command_event_dispatcher_add(&ctx->event_dispatcher, fn, userdata);
+}
+
+void command_context_remove_listeners(command_context_t *ctx) {
+    if (!ctx) {
+        return;
+    }
+    command_event_dispatcher_remove_all(&ctx->event_dispatcher);
+}
+
+static command_event_type_t identify_event_type(const char *command_name) {
+    if (!command_name) {
+        return COMMAND_EVENT_GENERIC;
+    }
+    if (command_str_icmp(command_name, "SET") == 0) {
+        return COMMAND_EVENT_WRITE;
+    }
+    if (command_str_icmp(command_name, "FLUSHALL") == 0 ||
+        command_str_icmp(command_name, "FLUSHDB") == 0) {
+        return COMMAND_EVENT_DELETE;
+    }
+    if (command_str_icmp(command_name, "EXPIRE") == 0 ||
+        command_str_icmp(command_name, "PEXPIRE") == 0 ||
+        command_str_icmp(command_name, "PERSIST") == 0) {
+        return COMMAND_EVENT_EXPIRY;
+    }
+    return COMMAND_EVENT_GENERIC;
 }
 
 void command_handle(int client_fd, const resp_command_t *cmd, command_context_t *ctx) {
@@ -115,5 +170,14 @@ void command_handle(int client_fd, const resp_command_t *cmd, command_context_t 
         return;
     }
 
-    spec->handler(client_fd, cmd, ctx);
+    int handler_rc = spec->handler(client_fd, cmd, ctx);
+
+    command_event_t event = {
+        .type = identify_event_type(spec->name),
+        .command_name = spec->name,
+        .command = cmd,
+        .context = ctx,
+        .handler_result = handler_rc,
+    };
+    command_event_dispatcher_dispatch(&ctx->event_dispatcher, &event);
 }

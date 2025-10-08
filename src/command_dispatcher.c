@@ -110,15 +110,21 @@ int command_spec_validate(const command_spec_t *spec,
         send_wrong_arity(client_fd, spec->name);
         return -1;
     }
-    if (spec->validator) {
-        char error_buf[128] = {0};
-        int rc = spec->validator(cmd, ctx, error_buf, sizeof(error_buf));
-        if (rc != 0) {
-            if (error_buf[0] == '\0') {
-                snprintf(error_buf, sizeof(error_buf), "ERR invalid arguments");
+    if (spec->validator_count > 0 && spec->validators) {
+        for (size_t i = 0; i < spec->validator_count; ++i) {
+            const command_validator_t *validator = &spec->validators[i];
+            if (!validator->fn) {
+                continue;
             }
-            resp_send_error(client_fd, error_buf);
-            return -1;
+            char error_buf[128] = {0};
+            int rc = validator->fn(cmd, ctx, error_buf, sizeof(error_buf));
+            if (rc != 0) {
+                if (error_buf[0] == '\0') {
+                    snprintf(error_buf, sizeof(error_buf), "ERR invalid arguments");
+                }
+                resp_send_error(client_fd, error_buf);
+                return -1;
+            }
         }
     }
     return 0;
