@@ -35,7 +35,7 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
 ```
 
 - **Runtime Orchestrator**: Encapsulates configuration and coordinates the bootstrap/shutdown of all subsystems before requests flow through a pluggable subsystem registry.
-- **Reactor Layer**: Poll-based event loop managing non-blocking sockets.
+- **Reactor Layer**: Backend-pluggable event loop (default `poll`) managing non-blocking sockets.
 - **Command Pipeline**: RESP parser, validator chain, dispatcher table, event bus.
 - **Execution Engine**: Command handlers keyed by feature families (core,
   key-value, expiration, admin, replication).
@@ -63,7 +63,7 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
 | **Command dispatcher** | `src/command.c`, `include/command_dispatcher.h` | Table-driven handlers, validator chains, event emission |
 | **Handlers** | `src/handlers_*.c` | Families: basic, kv, admin, expiration, replication |
 | **RESP protocol** | `src/resp.c` | Parser and serializer for RESP messages |
-| **Networking** | `src/server.c`, `src/connection.c`, `src/reactor.c` | Reactor loop, connection state machines |
+| **Networking** | `src/server.c`, `src/connection.c`, `src/reactor.c`, `src/reactor_poll.c` | Reactor loop with pluggable backends, connection state machines |
 | **Datastore** | `src/datastore.c`, `include/datastore.h` | Hash-table key/value storage with TTL, snapshotting |
 | **Persistence** | `src/persistence.c`, `src/rdb.c` | Snapshot and future AOF hooks |
 | **Replication** | `src/replication.c` | Listener registration, handshake stub |

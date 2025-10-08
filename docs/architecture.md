@@ -55,7 +55,7 @@
 - **command handlers**: Implement individual command families (core ops, key/value, expiration, persistence, replication).
 - **rdb**: Load the initial dataset from disk and provide helpers for writing RDB snapshots.
 - **server**: Register listening sockets with the reactor and glue network activity into the command layer.
-- **reactor**: Provide a backend-agnostic event loop abstraction (poll/epoll/kqueue) to multiplex sockets.
+- **reactor**: Provide a backend-agnostic event loop abstraction (currently `poll`, pluggable to epoll/kqueue) to multiplex sockets.
 - **connection**: Own the per-connection RESP decode/send loop so transport concerns stay isolated.
 - **replication**: Handle master/slave negotiation, keep sockets to master alive, stream updates.
 - **persistence**: Coordinate synchronous/background saves, manage SAVE/BGSAVE state, and call into the RDB writer.
