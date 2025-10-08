@@ -5,6 +5,8 @@
 > reusable playbook for projects that depend on Redis semantics or embed it as a
 > service component.
 
+See the concept dictionary (`docs/concepts/`) for explanations of subsystem terminology referenced throughout this blueprint.
+
 ---
 
 ## 1. Product Goals & Non-Functional Targets

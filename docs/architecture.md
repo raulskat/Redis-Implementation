@@ -5,6 +5,8 @@
 2. Establish a clean separation between networking, command handling, persistence, replication, and the in-memory store.
 3. Define a roadmap of phases to reach a feature-complete Redis clone.
 
+New contributors should pair this architecture overview with the concept dictionary under `docs/concepts/`, which explains terminology and subsystem internals in detail.
+
 ## Target Source Layout
 ```
 +-- include/

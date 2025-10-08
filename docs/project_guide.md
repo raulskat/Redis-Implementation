@@ -72,7 +72,7 @@ Clients ──► Reactor (I/O) ──► Command Pipeline ──► Execution E
 | **Persistence** | `src/persistence.c`, `src/rdb.c` | Snapshot and future AOF hooks |
 | **Replication** | `src/replication.c` | Listener registration, backlog stream, master handshake |
 | **Expiry** | `src/expiry.c` | Background expiration scheduler |
-| **Documentation** | `docs/*.md` | Architecture plan, parity blueprint, this guide |
+| **Documentation** | `docs/*.md` | Architecture plan, parity blueprint, concept dictionary, this guide |
 
 Each module is registered via the command context, making it easier to swap components.
 
@@ -163,6 +163,7 @@ Mitigation: maintain milestone-specific acceptance tests, CI pipelines, benchmar
    - Recommended: `redis-cli` or `nc` for manual testing.
 2. **Documentation**  
    - Read `docs/architecture.md` and `docs/redis_parity_design.md`.
+   - Use the concept dictionary in `docs/concepts/` when you need background on C patterns, modules, or tooling.
    - Update relevant docs for new features/changes.
 3. **Testing**  
    - Unit tests (to be added) for modules.
